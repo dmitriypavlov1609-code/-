@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: fleet-ai-telegram-bot
+    runtime: docker
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: BOT_DB_PATH
+        value: /tmp/bot_data.sqlite3

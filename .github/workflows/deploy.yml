@@ -1,0 +1,35 @@
+name: Deploy Fleet Bot
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.DEPLOY_HOST != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" << 'EOF'
+            set -e
+            mkdir -p ~/fleet-bot
+            cd ~/fleet-bot
+            if [ ! -d .git ]; then
+              git clone "${{ github.server_url }}/${{ github.repository }}" .
+            else
+              git fetch --all
+              git reset --hard origin/main
+            fi
+            docker compose up -d --build
+          EOF

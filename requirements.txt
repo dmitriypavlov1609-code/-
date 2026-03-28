@@ -1,0 +1,2 @@
+# External dependencies are not required.
+# Bot uses Python stdlib + Telegram HTTP API + Groq HTTP API.
