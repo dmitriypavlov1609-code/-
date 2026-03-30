@@ -47,9 +47,10 @@ class AIClient:
 
     def classify_driver_request(self, message: str) -> tuple[str, str]:
         prompt = (
-            "Ты диспетчер автопарка. Классифицируй сообщение водителя в один тип: "
+            "Ты диспетчер автопарка. Классифицируй сообщение водителя ровно в один тип: "
             "day_off_request, car_assignment_request, general_message. "
-            "Ответь JSON: {\"type\":\"...\",\"summary\":\"...\"}."
+            "summary должен быть коротким, конкретным и по-русски. "
+            "Ответь только JSON: {\"type\":\"...\",\"summary\":\"...\"}."
         )
 
         try:
@@ -69,19 +70,35 @@ class AIClient:
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, KeyError):
             return self._heuristic_classification(message)
 
-    def assistant_reply(self, message: str) -> str:
+    def assistant_reply(self, message: str, history: list[dict[str, str]] | None = None) -> str:
+        history = history or []
         prompt = (
-            "Ты ассистент автопарка. Отвечай кратко и вежливо на русском. "
-            "Если просят выходной или посадку на авто, попроси дату, смену и маршрут при необходимости."
+            "Ты живой диспетчер-ассистент автопарка. Отвечай на русском естественно, без шаблонов и без "
+            "одинаковых фраз. Учитывай предыдущие сообщения чата. Не повторяй вопрос пользователя дословно. "
+            "Если данных не хватает, задай 1-2 точных уточнения. "
+            "Если это заявка на выходной, уточняй дату и смену. "
+            "Если это заявка на машину или посадку, уточняй дату, смену, маршрут или парк, если этого не хватает. "
+            "Если информации достаточно, коротко подтверди, что заявка принята, и скажи что будет передана диспетчеру. "
+            "Пиши кратко: обычно 1-3 предложения."
         )
         try:
+            messages = [{"role": "system", "content": prompt}]
+            for item in history[-8:]:
+                role = item.get("role", "user")
+                content = item.get("text", "").strip()
+                if role not in {"user", "assistant"} or not content:
+                    continue
+                messages.append({"role": role, "content": content[:1000]})
+            messages.append({"role": "user", "content": message})
             reply = self._post_chat(
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": message},
-                ],
-                temperature=0.4,
+                messages=messages,
+                temperature=0.7,
             )
             return reply.strip() or "Принял сообщение, передаю диспетчеру."
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, KeyError):
-            return "Принял сообщение. Уточните дату/смену/маршрут, если это заявка на выходной или авто."
+            text = message.lower()
+            if re.search(r"(выходн|отгул|отпуск|не смогу)", text):
+                return "Принял. Напишите, пожалуйста, на какую дату нужен выходной и какая у вас смена."
+            if re.search(r"(посад|авто|машин|транспорт|смену на авто)", text):
+                return "Принял. Уточните, пожалуйста, дату, смену и на какой маршрут или машину вас поставить."
+            return "Принял сообщение. Если это заявка, напишите дату, смену и детали, чтобы я передал диспетчеру без задержки."

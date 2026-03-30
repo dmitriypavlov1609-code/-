@@ -52,6 +52,14 @@ class Storage:
                     details TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -73,6 +81,48 @@ class Storage:
         with self._connect() as conn:
             rows = conn.execute("SELECT chat_id FROM chats").fetchall()
         return [int(row["chat_id"]) for row in rows]
+
+    def add_chat_message(self, chat_id: int, role: str, text: str) -> None:
+        now = datetime.now(tz=timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO chat_messages(chat_id, role, text, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (chat_id, role, text[:4000], now),
+            )
+            conn.execute(
+                """
+                DELETE FROM chat_messages
+                WHERE chat_id = ?
+                  AND id NOT IN (
+                    SELECT id
+                    FROM chat_messages
+                    WHERE chat_id = ?
+                    ORDER BY id DESC
+                    LIMIT 12
+                  )
+                """,
+                (chat_id, chat_id),
+            )
+
+    def get_recent_chat_messages(self, chat_id: int, limit: int = 8) -> list[dict[str, str]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT role, text
+                FROM chat_messages
+                WHERE chat_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (chat_id, limit),
+            ).fetchall()
+        return [
+            {"role": str(row["role"]), "text": str(row["text"])}
+            for row in reversed(rows)
+        ]
 
     def save_request(
         self,

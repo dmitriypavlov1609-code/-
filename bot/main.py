@@ -138,6 +138,8 @@ def process_text_message(
     ai: AIClient,
     settings: Settings,
 ) -> None:
+    history = storage.get_recent_chat_messages(chat_id)
+    storage.add_chat_message(chat_id, "user", text)
     req_type, summary = ai.classify_driver_request(text)
 
     if req_type in {"day_off_request", "car_assignment_request"}:
@@ -163,7 +165,9 @@ def process_text_message(
             except Exception as exc:  # pragma: no cover
                 logger.warning("Failed admin notification to %s: %s", admin_id, exc)
 
-    tg.send_message(chat_id, ai.assistant_reply(text))
+    reply = ai.assistant_reply(text, history=history)
+    tg.send_message(chat_id, reply)
+    storage.add_chat_message(chat_id, "assistant", reply)
 
 
 def run(settings: Settings) -> None:
