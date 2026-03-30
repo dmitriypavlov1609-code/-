@@ -7,14 +7,73 @@ import urllib.request
 
 
 class AIClient:
-    def __init__(self, api_key: str | None, model_name: str) -> None:
-        self.api_key = api_key
+    def __init__(
+        self,
+        gemini_api_key: str | None = None,
+        groq_api_key: str | None = None,
+        model_name: str = "llama-3.3-70b-versatile",
+    ) -> None:
+        self.gemini_api_key = gemini_api_key
+        self.groq_api_key = groq_api_key
         self.model_name = model_name
         self._api_url = "https://api.groq.com/openai/v1/chat/completions"
+        self._gemini_url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-2.5-flash:generateContent"
+        )
 
     def _post_chat(self, messages: list[dict[str, str]], temperature: float) -> str:
-        if not self.api_key:
-            raise urllib.error.URLError("GROQ_API_KEY is not configured")
+        if self.gemini_api_key:
+            system_prompt = ""
+            contents: list[dict[str, object]] = []
+            for message in messages:
+                role = message.get("role", "user")
+                content = message.get("content", "").strip()
+                if not content:
+                    continue
+                if role == "system":
+                    system_prompt = f"{system_prompt}\n\n{content}".strip()
+                    continue
+                gemini_role = "model" if role == "assistant" else "user"
+                contents.append(
+                    {
+                        "role": gemini_role,
+                        "parts": [{"text": content}],
+                    }
+                )
+            if not contents:
+                raise urllib.error.URLError("No messages to send to Gemini")
+
+            payload: dict[str, object] = {
+                "contents": contents,
+                "generationConfig": {"temperature": temperature},
+            }
+            if system_prompt:
+                payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+
+            data = json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(
+                self._gemini_url,
+                data=data,
+                headers={
+                    "x-goog-api-key": self.gemini_api_key,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=30) as response:
+                parsed = json.loads(response.read().decode("utf-8"))
+            candidates = parsed.get("candidates") or []
+            if not candidates:
+                raise KeyError("Gemini response does not contain candidates")
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text_parts = [part.get("text", "") for part in parts if part.get("text")]
+            if not text_parts:
+                raise KeyError("Gemini response does not contain text")
+            return "\n".join(text_parts).strip()
+
+        if not self.groq_api_key:
+            raise urllib.error.URLError("No LLM API key is configured")
 
         payload = {
             "model": self.model_name,
@@ -26,7 +85,7 @@ class AIClient:
             self._api_url,
             data=data,
             headers={
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {self.groq_api_key}",
                 "Content-Type": "application/json",
             },
             method="POST",

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass(slots=True)
 class Settings:
     telegram_token: str
+    gemini_api_key: str | None
     groq_api_key: str | None
     admin_ids: set[int]
     model_name: str = "llama-3.3-70b-versatile"
@@ -37,12 +38,18 @@ def _parse_admin_ids(raw_admins: str | None) -> set[int]:
 
 def load_settings() -> Settings:
     telegram_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    gemini_api_key = (
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or ""
+    ).strip()
     groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
 
     if not telegram_token:
         raise ConfigError("TELEGRAM_BOT_TOKEN environment variable is required")
     return Settings(
         telegram_token=telegram_token,
+        gemini_api_key=gemini_api_key or None,
         groq_api_key=groq_api_key or None,
         admin_ids=_parse_admin_ids(os.getenv("ADMIN_IDS")),
         model_name=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),

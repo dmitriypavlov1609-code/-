@@ -172,7 +172,11 @@ def process_text_message(
 
 def run(settings: Settings) -> None:
     storage = Storage(settings.db_path)
-    ai = AIClient(settings.groq_api_key, settings.model_name)
+    ai = AIClient(
+        gemini_api_key=settings.gemini_api_key,
+        groq_api_key=settings.groq_api_key,
+        model_name=settings.model_name,
+    )
     tg = TelegramAPI(settings.telegram_token)
 
     tg.delete_webhook(drop_pending_updates=False)

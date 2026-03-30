@@ -19,9 +19,11 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_settings_parses_admin_ids(self) -> None:
         os.environ["TELEGRAM_BOT_TOKEN"] = "token"
+        os.environ["GEMINI_API_KEY"] = "gemini"
         os.environ["ADMIN_IDS"] = "1, 2,3"
         settings = load_settings()
         self.assertEqual(settings.admin_ids, {1, 2, 3})
+        self.assertEqual(settings.gemini_api_key, "gemini")
 
 
 if __name__ == "__main__":
