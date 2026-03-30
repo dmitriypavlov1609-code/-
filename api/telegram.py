@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from http.server import BaseHTTPRequestHandler
 
@@ -8,6 +9,8 @@ from bot.ai_client import AIClient
 from bot.config import load_settings
 from bot.main import TelegramAPI, handle_command, process_text_message
 from bot.storage import Storage
+
+logger = logging.getLogger("fleet-bot-webhook")
 
 
 class handler(BaseHTTPRequestHandler):
@@ -33,10 +36,15 @@ class handler(BaseHTTPRequestHandler):
             settings = load_settings()
             tg = TelegramAPI(settings.telegram_token)
             storage = Storage(settings.db_path)
-            ai = AIClient(settings.groq_api_key, settings.model_name)
+            ai = AIClient(
+                gemini_api_key=settings.gemini_api_key,
+                groq_api_key=settings.groq_api_key,
+                model_name=settings.model_name,
+            )
 
             message = update.get("message") or update.get("edited_message")
             if not message:
+                logger.info("Skipped update without message payload")
                 self._reply(200, {"ok": True, "skipped": True})
                 return
 
@@ -44,6 +52,13 @@ class handler(BaseHTTPRequestHandler):
             user = message.get("from", {})
             chat_id = int(chat.get("id"))
             user_id = int(user.get("id", 0))
+            text = message.get("text")
+            logger.info(
+                "Incoming update chat_id=%s user_id=%s text=%r",
+                chat_id,
+                user_id,
+                text,
+            )
 
             storage.upsert_chat(
                 chat_id=chat_id,
@@ -51,7 +66,6 @@ class handler(BaseHTTPRequestHandler):
                 chat_type=str(chat.get("type", "private")),
             )
 
-            text = message.get("text")
             if text:
                 if text.startswith("/") and handle_command(
                     command_text=text,
@@ -76,6 +90,7 @@ class handler(BaseHTTPRequestHandler):
 
             self._reply(200, {"ok": True})
         except Exception as exc:  # pragma: no cover
+            logger.exception("Webhook handler failed: %s", exc)
             self._reply(500, {"ok": False, "error": str(exc)})
 
     def do_GET(self) -> None:  # noqa: N802
