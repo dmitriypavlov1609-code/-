@@ -1,0 +1,11 @@
+services:
+  fleet-bot:
+    build: .
+    container_name: fleet-bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - BOT_DB_PATH=/app/data/bot_data.sqlite3
