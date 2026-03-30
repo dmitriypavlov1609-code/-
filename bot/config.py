@@ -36,8 +36,8 @@ def _parse_admin_ids(raw_admins: str | None) -> set[int]:
 
 
 def load_settings() -> Settings:
-    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    groq_api_key = os.getenv("GROQ_API_KEY")
+    telegram_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
 
     if not telegram_token:
         raise ConfigError("TELEGRAM_BOT_TOKEN environment variable is required")
@@ -46,5 +46,5 @@ def load_settings() -> Settings:
         groq_api_key=groq_api_key or None,
         admin_ids=_parse_admin_ids(os.getenv("ADMIN_IDS")),
         model_name=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        db_path=os.getenv("BOT_DB_PATH", "bot_data.sqlite3"),
+        db_path=(os.getenv("BOT_DB_PATH") or "bot_data.sqlite3").strip(),
     )
