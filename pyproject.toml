@@ -1,0 +1,6 @@
+[project]
+name = "fleet-ai-telegram-bot"
+version = "0.1.0"
+description = "Fleet AI Telegram bot for Vercel webhook deployment"
+requires-python = ">=3.11"
+dependencies = []
