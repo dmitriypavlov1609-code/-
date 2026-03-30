@@ -5,5 +5,11 @@
       "src": "api/telegram.py",
       "use": "@vercel/python"
     }
+  ],
+  "routes": [
+    {
+      "src": "/api/telegram",
+      "dest": "api/telegram.py"
+    }
   ]
 }
