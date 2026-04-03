@@ -101,7 +101,7 @@ class Storage:
                     FROM chat_messages
                     WHERE chat_id = ?
                     ORDER BY id DESC
-                    LIMIT 12
+                    LIMIT 30
                   )
                 """,
                 (chat_id, chat_id),

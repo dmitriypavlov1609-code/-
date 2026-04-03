@@ -29,6 +29,12 @@ class AIClientFallbackTests(unittest.TestCase):
             "Принял. Напишите, пожалуйста, дату выходного и вашу смену.",
         )
 
+    def test_detects_web_search_queries(self) -> None:
+        ai = AIClient(api_key=None, model_name="mock")
+        self.assertTrue(ai._should_search_web("Найди свежие новости по такси в Москве"))
+        self.assertTrue(ai._should_search_web("Какая сейчас погода в Казани?"))
+        self.assertFalse(ai._should_search_web("Мне нужен выходной на завтра"))
+
 
 if __name__ == "__main__":
     unittest.main()

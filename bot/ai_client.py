@@ -18,6 +18,7 @@ class AIClient:
         self.api_key = api_key
         self.api_url = api_url
         self.model_name = model_name
+        self.search_model_name = "gpt-5-search-api"
 
     @staticmethod
     def _normalize_text(text: str) -> str:
@@ -82,12 +83,17 @@ class AIClient:
         index = int(hashlib.sha256(message.encode("utf-8")).hexdigest(), 16) % len(variants)
         return variants[index]
 
-    def _post_chat(self, messages: list[dict[str, str]], temperature: float) -> str:
+    def _post_chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        model_name: str | None = None,
+    ) -> str:
         if not self.api_key:
             raise urllib.error.URLError("No LLM API key is configured")
 
         payload = {
-            "model": self.model_name,
+            "model": model_name or self.model_name,
             "temperature": temperature,
             "messages": messages,
         }
@@ -106,6 +112,36 @@ class AIClient:
             raw = response.read().decode("utf-8")
             parsed = json.loads(raw)
         return parsed["choices"][0]["message"]["content"]
+
+    def _should_search_web(self, message: str) -> bool:
+        text = message.lower().strip()
+        patterns = [
+            r"\bпогода\b",
+            r"\bновост",
+            r"\bкурс\b",
+            r"\bцена\b",
+            r"\bстоимост",
+            r"\bсколько стоит\b",
+            r"\bчто нового\b",
+            r"\bсегодня\b",
+            r"\bсейчас\b",
+            r"\bна этой неделе\b",
+            r"\bпоследн",
+            r"\bсвеж",
+            r"\bнайди\b",
+            r"\bзагугли\b",
+            r"\bпоищи\b",
+            r"\bпосмотри в интернете\b",
+            r"\bкто сейчас\b",
+            r"\bкакой сейчас\b",
+            r"\bактуальн",
+            r"\bадрес\b",
+            r"\bчасы работы\b",
+            r"\bсайт\b",
+            r"\bотзывы\b",
+            r"\bрейтинг\b",
+        ]
+        return any(re.search(pattern, text) for pattern in patterns)
 
     def _heuristic_classification(self, message: str) -> tuple[str, str]:
         text = message.lower()
@@ -143,29 +179,35 @@ class AIClient:
     def assistant_reply(self, message: str, history: list[dict[str, str]] | None = None) -> str:
         history = history or []
         prompt = (
-            "Ты диспетчер-ассистент автопарка. Отвечай на русском в деловом, спокойном и рабочем стиле. "
-            "Не используй разговорные штампы, лишнюю вежливую воду и повторяющиеся начала фраз. "
-            "Учитывай предыдущие сообщения чата. Не повторяй вопрос пользователя дословно. "
+            "Ты диспетчер-ассистент автопарка. Отвечай на русском в деловом, уверенном и естественном стиле. "
+            "Будь более общительным: поддерживай ход разговора, отвечай не сухо, но без пустой болтовни. "
+            "Не используй разговорные штампы, лишнюю воду и повторяющиеся начала фраз. "
+            "Учитывай предыдущие сообщения чата и опирайся на контекст разговора, а не только на последнюю реплику. "
+            "Не повторяй вопрос пользователя дословно. "
             "Если данных не хватает, задай 1-2 точных уточнения. "
             "Если это заявка на выходной, уточняй дату и смену. "
             "Если это заявка на машину или посадку, уточняй дату, смену, маршрут, парк или номер машины, если этого не хватает. "
             "Если информации достаточно, кратко подтверди принятие заявки и укажи, что она будет передана диспетчеру. "
             "Чередуй формулировки: используй разные деловые конструкции вроде 'принято', 'зафиксировал', 'информацию получил', 'заявка принята', но не повторяй одну и ту же форму подряд. "
-            "Пиши кратко: обычно 1-3 предложения. "
+            "Если пользователь спрашивает, на какой модели работает бот, отвечай: 'Бот работает через CometAPI, текущая модель настроена как gpt-5.' "
+            "Если вопрос требует актуальной информации из интернета, используй веб-поиск и отвечай по найденным данным. "
+            "Пиши обычно 2-5 предложений, если ситуация не требует короче. "
             "Если твой последний ответ в истории был похож по смыслу, сформулируй новый ответ заметно иначе."
         )
         try:
             messages = [{"role": "system", "content": prompt}]
-            for item in history[-8:]:
+            for item in history[-16:]:
                 role = item.get("role", "user")
                 content = item.get("text", "").strip()
                 if role not in {"user", "assistant"} or not content:
                     continue
                 messages.append({"role": role, "content": content[:1000]})
             messages.append({"role": "user", "content": message})
+            target_model = self.search_model_name if self._should_search_web(message) else self.model_name
             reply = self._post_chat(
                 messages=messages,
                 temperature=0.7,
+                model_name=target_model,
             )
             cleaned_reply = reply.strip() or "Принял сообщение, передаю диспетчеру."
             if self._looks_repetitive(cleaned_reply, history):
@@ -178,7 +220,11 @@ class AIClient:
                     {"role": "assistant", "content": cleaned_reply},
                     {"role": "user", "content": rewrite_prompt},
                 ]
-                rewritten = self._post_chat(rewrite_messages, temperature=1.0).strip()
+                rewritten = self._post_chat(
+                    rewrite_messages,
+                    temperature=1.0,
+                    model_name=target_model,
+                ).strip()
                 if rewritten and not self._looks_repetitive(rewritten, history):
                     return rewritten
                 return self._fallback_reply(message, history=history)
