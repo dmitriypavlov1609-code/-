@@ -24,6 +24,39 @@ class AIClient:
     def _normalize_text(text: str) -> str:
         return re.sub(r"\s+", " ", text.strip().lower())
 
+    def _is_model_question(self, message: str) -> bool:
+        text = self._normalize_text(message)
+        patterns = [
+            r"на какой модели",
+            r"какая модель",
+            r"какой ии",
+            r"на чем ты работа",
+            r"на ч[её]м ты работа",
+            r"какой у тебя gpt",
+            r"ты gpt[- ]?4",
+            r"ты gpt[- ]?5",
+        ]
+        return any(re.search(pattern, text) for pattern in patterns)
+
+    def _general_fallback_reply(self, message: str, history: list[dict[str, str]] | None = None) -> str:
+        history = history or []
+        assistant_history = [
+            item.get("text", "").strip()
+            for item in history
+            if item.get("role") == "assistant" and item.get("text", "").strip()
+        ]
+        variants = [
+            "Понял вопрос. Уточните чуть подробнее, и я отвечу по существу.",
+            "Запрос получил. Если добавите деталей, смогу ответить точнее.",
+            "Принял. Сформулируйте задачу чуть конкретнее, чтобы дать точный ответ.",
+            "Хорошо. Если нужен предметный ответ, добавьте контекст или уточняющие детали.",
+        ]
+        recent_normalized = {self._normalize_text(item) for item in assistant_history[-4:]}
+        for variant in variants:
+            if self._normalize_text(variant) not in recent_normalized:
+                return variant
+        return variants[0]
+
     def _looks_repetitive(self, reply: str, history: list[dict[str, str]]) -> bool:
         normalized_reply = self._normalize_text(reply)
         if not normalized_reply:
@@ -47,6 +80,8 @@ class AIClient:
     def _fallback_reply(self, message: str, history: list[dict[str, str]] | None = None) -> str:
         history = history or []
         text = message.lower()
+        if self._is_model_question(message):
+            return "Бот работает через CometAPI, текущая модель настроена как gpt-5."
         assistant_history = [
             item.get("text", "").strip()
             for item in history
@@ -68,12 +103,7 @@ class AIClient:
                 "Зафиксировал запрос. Укажите дату, смену и куда вас поставить.",
             ]
         else:
-            variants = [
-                "Сообщение получил. Если это заявка, направьте дату, смену и детали.",
-                "Информацию принял. При необходимости оформления заявки добавьте дату и подробности.",
-                "Запрос получен. Если вопрос касается смены или машины, уточните дату и детали.",
-                "Принято к работе. Если требуется оформление заявки, укажите дату, смену и суть вопроса.",
-            ]
+            return self._general_fallback_reply(message, history=history)
 
         recent_normalized = {self._normalize_text(item) for item in assistant_history[-4:]}
         for variant in variants:
@@ -178,21 +208,22 @@ class AIClient:
 
     def assistant_reply(self, message: str, history: list[dict[str, str]] | None = None) -> str:
         history = history or []
+        if self._is_model_question(message):
+            return "Бот работает через CometAPI, текущая модель настроена как gpt-5."
+
         prompt = (
-            "Ты диспетчер-ассистент автопарка. Отвечай на русском в деловом, уверенном и естественном стиле. "
-            "Будь более общительным: поддерживай ход разговора, отвечай не сухо, но без пустой болтовни. "
-            "Не используй разговорные штампы, лишнюю воду и повторяющиеся начала фраз. "
-            "Учитывай предыдущие сообщения чата и опирайся на контекст разговора, а не только на последнюю реплику. "
-            "Не повторяй вопрос пользователя дословно. "
-            "Если данных не хватает, задай 1-2 точных уточнения. "
-            "Если это заявка на выходной, уточняй дату и смену. "
-            "Если это заявка на машину или посадку, уточняй дату, смену, маршрут, парк или номер машины, если этого не хватает. "
-            "Если информации достаточно, кратко подтверди принятие заявки и укажи, что она будет передана диспетчеру. "
-            "Чередуй формулировки: используй разные деловые конструкции вроде 'принято', 'зафиксировал', 'информацию получил', 'заявка принята', но не повторяй одну и ту же форму подряд. "
-            "Если пользователь спрашивает, на какой модели работает бот, отвечай: 'Бот работает через CometAPI, текущая модель настроена как gpt-5.' "
+            "Ты полезный русскоязычный ассистент для водителей и диспетчерских задач. "
+            "Отвечай по существу, естественно и уверенно. Будь общительным, но не многословным. "
+            "Сначала пытайся понять обычный человеческий вопрос и дать нормальный ответ, а не сводить всё к заявкам. "
+            "Учитывай предыдущие сообщения чата и опирайся на контекст разговора. "
+            "Если вопрос общий, отвечай как обычный компетентный ассистент. "
+            "Если это рабочая заявка на выходной, смену, маршрут, авто или постановку, отвечай как диспетчер-ассистент: кратко подтверди, что запрос принят, и при необходимости уточни недостающие детали. "
+            "Если данных недостаточно, задай 1-2 точных уточнения. "
+            "Не повторяй вопрос пользователя дословно. Не выдумывай факты. "
             "Если вопрос требует актуальной информации из интернета, используй веб-поиск и отвечай по найденным данным. "
-            "Пиши обычно 2-5 предложений, если ситуация не требует короче. "
-            "Если твой последний ответ в истории был похож по смыслу, сформулируй новый ответ заметно иначе."
+            "Если пользователь спрашивает, на какой модели работает бот, отвечай ровно: 'Бот работает через CometAPI, текущая модель настроена как gpt-5.' "
+            "Чередуй формулировки и не используй одну и ту же конструкцию подряд. "
+            "Пиши обычно 2-5 предложений, если ситуация не требует короче."
         )
         try:
             messages = [{"role": "system", "content": prompt}]
@@ -204,11 +235,18 @@ class AIClient:
                 messages.append({"role": role, "content": content[:1000]})
             messages.append({"role": "user", "content": message})
             target_model = self.search_model_name if self._should_search_web(message) else self.model_name
-            reply = self._post_chat(
-                messages=messages,
-                temperature=0.7,
-                model_name=target_model,
-            )
+            try:
+                reply = self._post_chat(
+                    messages=messages,
+                    temperature=0.7,
+                    model_name=target_model,
+                )
+            except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, KeyError):
+                reply = self._post_chat(
+                    messages=messages,
+                    temperature=0.7,
+                    model_name=self.model_name,
+                )
             cleaned_reply = reply.strip() or "Принял сообщение, передаю диспетчеру."
             if self._looks_repetitive(cleaned_reply, history):
                 rewrite_prompt = (
