@@ -2,7 +2,7 @@
 
 Телеграм-бот для автопарка, который:
 - принимает сообщения от водителей;
-- классифицирует заявки (выходной / посадка на авто / общее) через Groq AI;
+- классифицирует заявки (выходной / посадка на авто / общее) через OpenAI GPT-5;
 - сохраняет заявки и чаты в SQLite;
 - уведомляет администраторов по заявкам;
 - делает рассылки по подключённым чатам.
@@ -10,7 +10,7 @@
 ## Важно по безопасности
 Вы отправили секретные ключи в открытом чате. **Обязательно отзовите и перевыпустите ключи**:
 - Telegram Bot Token (через @BotFather);
-- Groq API key.
+- OpenAI API key.
 
 Ключи не хранятся в коде — только через переменные окружения.
 
@@ -26,7 +26,8 @@ cp .env.example .env
 
 ```bash
 TELEGRAM_BOT_TOKEN=...
-GROQ_API_KEY=...
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5
 ADMIN_IDS=123456789,987654321
 ```
 
@@ -49,10 +50,10 @@ python -m bot.main
 
 ## Как это работает
 1. Бот получает обновления через Telegram long polling (`getUpdates`).
-2. Сообщения классифицируются ИИ (Groq API).
+2. Сообщения классифицируются ИИ (OpenAI API).
 3. Если это заявка на выходной/авто — запись попадает в SQLite и пересылается админам.
 4. Водитель получает ответ ассистента.
-5. Если Groq недоступен, бот использует встроенную эвристику и продолжает работать.
+5. Если OpenAI недоступен, бот использует встроенную эвристику и продолжает работать.
 
 ## Автономный запуск на сервере (`systemd`)
 
@@ -94,7 +95,7 @@ git push -u origin main
 
 ```bash
 cp .env.example .env
-# заполните TELEGRAM_BOT_TOKEN, ADMIN_IDS, при желании GROQ_API_KEY
+# заполните TELEGRAM_BOT_TOKEN, ADMIN_IDS, при желании OPENAI_API_KEY
 mkdir -p data
 docker compose up -d --build
 ```
@@ -134,7 +135,8 @@ GitHub — это хранилище кода, а не постоянный се
 4. В Render задайте переменные:
    - `TELEGRAM_BOT_TOKEN`
    - `ADMIN_IDS`
-   - `GROQ_API_KEY` (опционально)
+   - `OPENAI_API_KEY` (опционально)
+   - `OPENAI_MODEL` (`gpt-5` по умолчанию)
 5. Нажмите Deploy.
 
 После деплоя бот будет запущен постоянно и начнет отвечать.
@@ -160,7 +162,8 @@ python -m unittest discover -s tests -v
 2. В Vercel задайте env:
    - `TELEGRAM_BOT_TOKEN`
    - `ADMIN_IDS`
-   - `GROQ_API_KEY` (опционально)
+   - `OPENAI_API_KEY` (опционально)
+   - `OPENAI_MODEL` (`gpt-5` по умолчанию)
    - `TELEGRAM_WEBHOOK_SECRET` (рекомендуется)
 3. После деплоя выполните локально:
 
@@ -178,7 +181,7 @@ python scripts/set_webhook.py
 ### Быстрый one-shot деплой на Vercel
 
 ```bash
-# нужны TELEGRAM_BOT_TOKEN и ADMIN_IDS, опционально GROQ_API_KEY и TELEGRAM_WEBHOOK_SECRET
+# нужны TELEGRAM_BOT_TOKEN и ADMIN_IDS, опционально OPENAI_API_KEY, OPENAI_MODEL и TELEGRAM_WEBHOOK_SECRET
 bash scripts/deploy_vercel.sh
 ```
 
@@ -186,4 +189,3 @@ bash scripts/deploy_vercel.sh
 1. добавляет env в Vercel;
 2. делает `vercel --prod`;
 3. автоматически вызывает `setWebhook`.
-

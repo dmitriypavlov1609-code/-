@@ -7,10 +7,10 @@ from dataclasses import dataclass
 @dataclass(slots=True)
 class Settings:
     telegram_token: str
-    gemini_api_key: str | None
-    groq_api_key: str | None
+    llm_api_key: str | None
+    llm_api_url: str
     admin_ids: set[int]
-    model_name: str = "llama-3.3-70b-versatile"
+    model_name: str = "gpt-5"
     db_path: str = "bot_data.sqlite3"
 
 
@@ -38,20 +38,24 @@ def _parse_admin_ids(raw_admins: str | None) -> set[int]:
 
 def load_settings() -> Settings:
     telegram_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
-    gemini_api_key = (
-        os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
+    llm_api_key = (
+        os.getenv("COMETAPI_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
         or ""
     ).strip()
-    groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip()
+    llm_api_url = (
+        os.getenv("COMETAPI_BASE_URL")
+        or "https://api.cometapi.com/v1/chat/completions"
+    ).strip()
+    default_db_path = "/tmp/bot_data.sqlite3" if os.getenv("VERCEL") == "1" else "bot_data.sqlite3"
 
     if not telegram_token:
         raise ConfigError("TELEGRAM_BOT_TOKEN environment variable is required")
     return Settings(
         telegram_token=telegram_token,
-        gemini_api_key=gemini_api_key or None,
-        groq_api_key=groq_api_key or None,
+        llm_api_key=llm_api_key or None,
+        llm_api_url=llm_api_url,
         admin_ids=_parse_admin_ids(os.getenv("ADMIN_IDS")),
-        model_name=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        db_path=(os.getenv("BOT_DB_PATH") or "bot_data.sqlite3").strip(),
+        model_name=(os.getenv("OPENAI_MODEL") or "gpt-5").strip(),
+        db_path=(os.getenv("BOT_DB_PATH") or default_db_path).strip(),
     )

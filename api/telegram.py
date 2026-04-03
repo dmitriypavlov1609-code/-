@@ -37,8 +37,8 @@ class handler(BaseHTTPRequestHandler):
             tg = TelegramAPI(settings.telegram_token)
             storage = Storage(settings.db_path)
             ai = AIClient(
-                gemini_api_key=settings.gemini_api_key,
-                groq_api_key=settings.groq_api_key,
+                api_key=settings.llm_api_key,
+                api_url=settings.llm_api_url,
                 model_name=settings.model_name,
             )
 
