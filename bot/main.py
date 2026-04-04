@@ -92,6 +92,13 @@ def handle_command(
         )
         if is_admin:
             text += "\n\nАдмин:\n/broadcast <текст>\n/chats"
+            if storage.use_postgres:
+                text += (
+                    "\n\nПрофили водителей:\n"
+                    "/driver_info <user_id> — информация о водителе\n"
+                    "/driver_stats <user_id> — статистика водителя\n"
+                    "/set_driver_pref <user_id> <key> <value> — установить настройку"
+                )
         tg.send_message(chat_id, text)
         return True
 
@@ -126,6 +133,100 @@ def handle_command(
         tg.send_message(chat_id, f"Рассылка завершена. Отправлено: {sent}, ошибок: {failed}")
         return True
 
+    # Driver profile commands (PostgreSQL only)
+    if storage.use_postgres:
+        if command_text.startswith("/driver_info"):
+            if not admin_only(settings, user_id):
+                tg.send_message(chat_id, "Команда доступна только администратору.")
+                return True
+
+            parts = command_text.split(maxsplit=1)
+            if len(parts) < 2:
+                tg.send_message(chat_id, "Использование: /driver_info <user_id>")
+                return True
+
+            try:
+                target_user_id = int(parts[1])
+                from .driver_profile import DriverProfileManager, format_driver_info
+
+                manager = DriverProfileManager(storage)
+                profile = storage.get_or_create_driver_profile(target_user_id, {"full_name": "Unknown"})
+                stats = manager.get_stats_summary(target_user_id)
+                preferences = manager.get_preferences(target_user_id)
+
+                info = format_driver_info(profile, stats, preferences)
+                tg.send_message(chat_id, info)
+            except ValueError:
+                tg.send_message(chat_id, "Неверный формат user_id. Используйте число.")
+            except Exception as exc:
+                logger.error(f"Failed to get driver info: {exc}")
+                tg.send_message(chat_id, f"Ошибка: {exc}")
+            return True
+
+        if command_text.startswith("/set_driver_pref"):
+            if not admin_only(settings, user_id):
+                tg.send_message(chat_id, "Команда доступна только администратору.")
+                return True
+
+            parts = command_text.split(maxsplit=3)
+            if len(parts) < 4:
+                tg.send_message(
+                    chat_id,
+                    "Использование: /set_driver_pref <user_id> <key> <value>\n"
+                    "Пример: /set_driver_pref 123456789 shift_preference morning"
+                )
+                return True
+
+            try:
+                target_user_id = int(parts[1])
+                pref_key = parts[2]
+                pref_value = parts[3]
+
+                from .driver_profile import DriverProfileManager
+                manager = DriverProfileManager(storage)
+                manager.set_preference(target_user_id, pref_key, pref_value)
+
+                tg.send_message(chat_id, f"✓ Настройка установлена: {pref_key}={pref_value}")
+            except ValueError:
+                tg.send_message(chat_id, "Неверный формат user_id. Используйте число.")
+            except Exception as exc:
+                logger.error(f"Failed to set preference: {exc}")
+                tg.send_message(chat_id, f"Ошибка: {exc}")
+            return True
+
+        if command_text.startswith("/driver_stats"):
+            if not admin_only(settings, user_id):
+                tg.send_message(chat_id, "Команда доступна только администратору.")
+                return True
+
+            parts = command_text.split(maxsplit=1)
+            if len(parts) < 2:
+                tg.send_message(chat_id, "Использование: /driver_stats <user_id>")
+                return True
+
+            try:
+                target_user_id = int(parts[1])
+                from .driver_profile import DriverProfileManager
+
+                manager = DriverProfileManager(storage)
+                stats = manager.get_stats_summary(target_user_id, days=30)
+
+                stats_text = (
+                    f"📊 Статистика водителя {target_user_id} (30 дней)\n\n"
+                    f"Всего сообщений: {stats.get('total_messages', 0)}\n"
+                    f"Всего заявок: {stats.get('total_requests', 0)}\n"
+                    f"- Выходные: {stats.get('day_off_requests', 0)}\n"
+                    f"- Постановка на авто: {stats.get('car_assignment_requests', 0)}\n"
+                    f"Активных дней: {stats.get('active_days', 0)}"
+                )
+                tg.send_message(chat_id, stats_text)
+            except ValueError:
+                tg.send_message(chat_id, "Неверный формат user_id. Используйте число.")
+            except Exception as exc:
+                logger.error(f"Failed to get driver stats: {exc}")
+                tg.send_message(chat_id, f"Ошибка: {exc}")
+            return True
+
     return False
 
 
@@ -138,10 +239,35 @@ def process_text_message(
     ai: AIClient,
     settings: Settings,
 ) -> None:
+    # Get or create driver profile (if PostgreSQL is enabled)
+    driver_profile = None
+    profile_manager = None
+    if storage.use_postgres:
+        try:
+            from .driver_profile import DriverProfileManager
+            profile_manager = DriverProfileManager(storage)
+
+            driver_profile = storage.get_or_create_driver_profile(
+                user_id=int(user.get("id", 0)),
+                user_data={
+                    "full_name": _safe_full_name(user),
+                    "username": user.get("username"),
+                }
+            )
+
+            # Update activity
+            profile_manager.update_activity(int(user.get("id", 0)))
+
+        except Exception as exc:
+            logger.warning(f"Failed to get/create driver profile: {exc}")
+
     history = storage.get_recent_chat_messages(chat_id)
-    storage.add_chat_message(chat_id, "user", text)
+    message_id = storage.add_chat_message(chat_id, "user", text)
+
+    # Classify request
     req_type, summary = ai.classify_driver_request(text)
 
+    # Save request if needed
     if req_type in {"day_off_request", "car_assignment_request"}:
         record = storage.save_request(
             user_id=int(user.get("id", 0)),
@@ -150,6 +276,14 @@ def process_text_message(
             request_type=req_type,
             details=summary,
         )
+
+        # Track request in statistics
+        if profile_manager:
+            try:
+                profile_manager.track_request(int(user.get("id", 0)), req_type)
+            except Exception as exc:
+                logger.debug(f"Failed to track request: {exc}")
+
         username_part = f" (@{record.username})" if record.username else ""
         admin_text = (
             "🚕 Новая заявка от водителя\n"
@@ -165,17 +299,55 @@ def process_text_message(
             except Exception as exc:  # pragma: no cover
                 logger.warning("Failed admin notification to %s: %s", admin_id, exc)
 
-    reply = ai.assistant_reply(text, history=history)
+    # Generate reply with RAG if enabled
+    if settings.rag_enabled and storage.use_postgres:
+        try:
+            from .rag import RAGPipeline
+            rag = RAGPipeline(storage, ai, top_k=settings.rag_top_k)
+
+            # Use RAG for appropriate queries
+            if rag.should_use_rag(text):
+                reply, citations = rag.generate_answer(
+                    query=text,
+                    history=history,
+                    driver_profile=driver_profile,
+                )
+                logger.info(f"RAG reply generated with {len(citations)} citations")
+            else:
+                # Fallback to regular assistant reply
+                reply = ai.assistant_reply(text, history=history)
+        except Exception as exc:
+            logger.error(f"RAG generation failed: {exc}")
+            # Fallback to regular assistant reply
+            reply = ai.assistant_reply(text, history=history)
+    else:
+        # Regular assistant reply (no RAG)
+        reply = ai.assistant_reply(text, history=history)
+
     tg.send_message(chat_id, reply)
     storage.add_chat_message(chat_id, "assistant", reply)
 
+    # Store message embedding in background (optional, best effort)
+    if storage.use_postgres and settings.rag_enabled:
+        try:
+            embedding = ai.get_embedding(text)
+            storage.add_message_embedding(message_id, embedding)
+        except Exception as exc:
+            logger.debug(f"Failed to store message embedding: {exc}")
+
 
 def run(settings: Settings) -> None:
-    storage = Storage(settings.db_path)
+    storage = Storage(
+        db_path=settings.db_path,
+        postgres_url=settings.postgres_url,
+        use_postgres=settings.use_postgres,
+    )
     ai = AIClient(
         api_key=settings.llm_api_key,
         api_url=settings.llm_api_url,
         model_name=settings.model_name,
+        openai_api_key=settings.openai_api_key,
+        embedding_model=settings.embedding_model,
     )
     tg = TelegramAPI(settings.telegram_token)
 

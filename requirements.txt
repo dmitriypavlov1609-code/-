@@ -1,2 +1,6 @@
-# External dependencies are not required.
-# Bot uses Python stdlib + Telegram HTTP API + Groq HTTP API.
+# Core dependencies for PostgreSQL support
+psycopg2-binary==2.9.9
+pgvector==0.2.4
+
+# Note: Bot primarily uses Python stdlib + Telegram HTTP API + LLM HTTP API
+# PostgreSQL dependencies are optional - bot falls back to SQLite if not available

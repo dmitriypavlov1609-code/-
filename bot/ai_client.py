@@ -14,11 +14,15 @@ class AIClient:
         api_key: str | None = None,
         api_url: str = "https://api.cometapi.com/v1/chat/completions",
         model_name: str = "gpt-5",
+        openai_api_key: str | None = None,
+        embedding_model: str = "text-embedding-3-small",
     ) -> None:
         self.api_key = api_key
         self.api_url = api_url
         self.model_name = model_name
         self.search_model_name = "gpt-5-search-api"
+        self.openai_api_key = openai_api_key or api_key
+        self.embedding_model = embedding_model
 
     @staticmethod
     def _normalize_text(text: str) -> str:
@@ -269,3 +273,86 @@ class AIClient:
             return cleaned_reply
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, KeyError):
             return self._fallback_reply(message, history=history)
+
+    # ========================================================================
+    # Embeddings Methods (for RAG)
+    # ========================================================================
+
+    def get_embedding(self, text: str) -> list[float]:
+        """
+        Get embedding vector from OpenAI API.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            List of floats (1536 dimensions for text-embedding-3-small)
+
+        Raises:
+            ValueError: If OpenAI API key is not configured
+            urllib.error.URLError: If API request fails
+        """
+        if not self.openai_api_key:
+            raise ValueError("OpenAI API key required for embeddings")
+
+        payload = {
+            "model": self.embedding_model,
+            "input": text[:8000],  # Truncate to avoid token limits
+        }
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/embeddings",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {self.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(request, timeout=30) as response:
+            parsed = json.loads(response.read().decode("utf-8"))
+
+        return parsed["data"][0]["embedding"]
+
+    def get_embeddings_batch(self, texts: list[str]) -> list[list[float]]:
+        """
+        Get embeddings for multiple texts in a single API call (more efficient).
+
+        Args:
+            texts: List of texts to embed
+
+        Returns:
+            List of embedding vectors
+
+        Raises:
+            ValueError: If OpenAI API key is not configured
+            urllib.error.URLError: If API request fails
+        """
+        if not self.openai_api_key:
+            raise ValueError("OpenAI API key required for embeddings")
+
+        # Truncate texts and limit batch size
+        truncated_texts = [text[:8000] for text in texts[:100]]
+
+        payload = {
+            "model": self.embedding_model,
+            "input": truncated_texts,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/embeddings",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {self.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(request, timeout=60) as response:
+            parsed = json.loads(response.read().decode("utf-8"))
+
+        # Sort by index to maintain order
+        embeddings_data = sorted(parsed["data"], key=lambda x: x["index"])
+        return [item["embedding"] for item in embeddings_data]

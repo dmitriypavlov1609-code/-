@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .env
 .venv/
-data/
 bot_data.sqlite3
 .vercel
+
+# Allow knowledge base files
+!data/knowledge_base/

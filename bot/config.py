@@ -13,6 +13,20 @@ class Settings:
     model_name: str = "gpt-5"
     db_path: str = "bot_data.sqlite3"
 
+    # Database - PostgreSQL
+    postgres_url: str = ""
+    use_postgres: bool = False
+
+    # Embeddings - OpenAI
+    openai_api_key: str | None = None
+    embedding_model: str = "text-embedding-3-small"
+
+    # RAG Configuration
+    rag_enabled: bool = False
+    rag_top_k: int = 5
+    rag_chunk_size: int = 512
+    rag_chunk_overlap: int = 50
+
 
 class ConfigError(RuntimeError):
     """Raised when required environment variables are missing."""
@@ -51,6 +65,16 @@ def load_settings() -> Settings:
 
     if not telegram_token:
         raise ConfigError("TELEGRAM_BOT_TOKEN environment variable is required")
+
+    # Parse boolean env vars
+    use_postgres = os.getenv("USE_POSTGRES", "false").lower() in ("true", "1", "yes")
+    rag_enabled = os.getenv("RAG_ENABLED", "false").lower() in ("true", "1", "yes")
+
+    # Parse integer env vars
+    rag_top_k = int(os.getenv("RAG_TOP_K", "5"))
+    rag_chunk_size = int(os.getenv("RAG_CHUNK_SIZE", "512"))
+    rag_chunk_overlap = int(os.getenv("RAG_CHUNK_OVERLAP", "50"))
+
     return Settings(
         telegram_token=telegram_token,
         llm_api_key=llm_api_key or None,
@@ -58,4 +82,12 @@ def load_settings() -> Settings:
         admin_ids=_parse_admin_ids(os.getenv("ADMIN_IDS")),
         model_name=(os.getenv("OPENAI_MODEL") or "gpt-5").strip(),
         db_path=(os.getenv("BOT_DB_PATH") or default_db_path).strip(),
+        postgres_url=(os.getenv("POSTGRES_URL") or "").strip(),
+        use_postgres=use_postgres,
+        openai_api_key=(os.getenv("OPENAI_API_KEY") or "").strip() or None,
+        embedding_model=(os.getenv("EMBEDDING_MODEL") or "text-embedding-3-small").strip(),
+        rag_enabled=rag_enabled,
+        rag_top_k=rag_top_k,
+        rag_chunk_size=rag_chunk_size,
+        rag_chunk_overlap=rag_chunk_overlap,
     )
